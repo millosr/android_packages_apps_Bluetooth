@@ -122,6 +122,7 @@ final class RemoteDevices {
         private String mAlias;
         private int mBondState;
         private BluetoothDevice mDevice;
+        private boolean isBondingInitiatedLocally;
 
         DeviceProperties() {
             mBondState = BluetoothDevice.BOND_NONE;
@@ -237,6 +238,24 @@ final class RemoteDevices {
         int getBondState() {
             synchronized (mObject) {
                 return mBondState;
+            }
+        }
+
+        /**
+         * @param isBondingInitiatedLocally wether bonding is initiated locally
+         */
+        void setBondingInitiatedLocally(boolean isBondingInitiatedLocally) {
+            synchronized (mObject) {
+                this.isBondingInitiatedLocally = isBondingInitiatedLocally;
+            }
+        }
+
+        /**
+         * @return the isBondingInitiatedLocally
+         */
+        boolean isBondingInitiatedLocally() {
+            synchronized (mObject) {
+                return isBondingInitiatedLocally;
             }
         }
     }
