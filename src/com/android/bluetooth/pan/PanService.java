@@ -59,6 +59,7 @@ import java.util.Map;
 public class PanService extends ProfileService {
     private static final String TAG = "PanService";
     private static final boolean DBG = false;
+    private static PanService sPanService;
 
     private static final String BLUETOOTH_IFACE_ADDR_START= "192.168.44.1";
     private static final int BLUETOOTH_MAX_PAN_CONNECTIONS = 5;
@@ -91,6 +92,40 @@ public class PanService extends ProfileService {
         return new BluetoothPanBinder(this);
     }
 
+    public static synchronized PanService getPanService() {
+        if (sPanService != null && sPanService.isAvailable()) {
+            if (DBG) {
+                Log.d(TAG, "getPanService(): returning " + sPanService);
+            }
+            return sPanService;
+        }
+        if (DBG) {
+            if (sPanService == null) {
+                Log.d(TAG, "getPanService(): service is NULL");
+            } else if (!sPanService.isAvailable()) {
+                Log.d(TAG, "getPanService(): service is not available");
+            }
+        }
+        return null;
+    }
+
+    private static synchronized void setPanService(PanService instance) {
+        if (instance != null && instance.isAvailable()) {
+            if (DBG) {
+                Log.d(TAG, "setPanService(): set to: " + instance);
+            }
+            sPanService = instance;
+        } else {
+            if (DBG) {
+                if (instance == null) {
+                    Log.d(TAG, "setPanService(): service not available");
+                } else if (!instance.isAvailable()) {
+                    Log.d(TAG, "setPanService(): service is cleaning up");
+                }
+            }
+        }
+    }
+
     protected boolean start() {
         mPanDevices = new HashMap<BluetoothDevice, BluetoothPanDevice>();
         mBluetoothIfaceAddresses = new ArrayList<String>();
@@ -105,6 +140,7 @@ public class PanService extends ProfileService {
 
         mNetworkFactory = new BluetoothTetheringNetworkFactory(getBaseContext(), getMainLooper(),
                 this);
+        setPanService(this);
 
         return true;
     }
@@ -254,7 +290,7 @@ public class PanService extends ProfileService {
         }
     };
 
-    boolean connect(BluetoothDevice device) {
+    public boolean connect(BluetoothDevice device) {
         enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
         if (getConnectionState(device) != BluetoothProfile.STATE_DISCONNECTED) {
             Log.e(TAG, "Pan Device not disconnected: " + device);
@@ -265,14 +301,14 @@ public class PanService extends ProfileService {
         return true;
     }
 
-    boolean disconnect(BluetoothDevice device) {
+    public boolean disconnect(BluetoothDevice device) {
         enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
         Message msg = mHandler.obtainMessage(MESSAGE_DISCONNECT,device);
         mHandler.sendMessage(msg);
         return true;
     }
 
-    int getConnectionState(BluetoothDevice device) {
+    public int getConnectionState(BluetoothDevice device) {
         BluetoothPanDevice panDevice = mPanDevices.get(device);
         if (panDevice == null) {
             return BluetoothPan.STATE_DISCONNECTED;
@@ -284,11 +320,11 @@ public class PanService extends ProfileService {
         if(DBG) Log.d(TAG, "isTetheringOn call getPanLocalRoleNative");
         return (getPanLocalRoleNative() & BluetoothPan.LOCAL_NAP_ROLE) != 0;
     }
-     boolean isPanUOn() {
+    boolean isPanUOn() {
         if(DBG) Log.d(TAG, "isTetheringOn call getPanLocalRoleNative");
         return (getPanLocalRoleNative() & BluetoothPan.LOCAL_PANU_ROLE) != 0;
     }
-     boolean isTetheringOn() {
+    public boolean isTetheringOn() {
         // TODO(BT) have a variable marking the on/off state
         return mTetherOn;
     }
@@ -321,7 +357,29 @@ public class PanService extends ProfileService {
         }
     }
 
-    List<BluetoothDevice> getConnectedDevices() {
+    public boolean setPriority(BluetoothDevice device, int priority) {
+        if (device == null) {
+            throw new IllegalArgumentException("Null device");
+        }
+        enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM, "Need BLUETOOTH_ADMIN permission");
+        Settings.Global.putInt(getContentResolver(),
+                Settings.Global.getBluetoothPanPriorityKey(device.getAddress()),
+                priority);
+        if (DBG) {
+            Log.d(TAG,"Saved priority " + device + " = " + priority);
+        }
+        return true;
+    }
+
+    public int getPriority(BluetoothDevice device) {
+        if (device == null) throw new IllegalArgumentException("Null device");
+        enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM, "Need BLUETOOTH_ADMIN permission");
+        return Settings.Global.getInt(getContentResolver(),
+                Settings.Global.getBluetoothPanPriorityKey(device.getAddress()),
+                BluetoothProfile.PRIORITY_UNDEFINED);
+    }
+
+    public List<BluetoothDevice> getConnectedDevices() {
         enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
         List<BluetoothDevice> devices = getDevicesMatchingConnectionStates(
                 new int[] {BluetoothProfile.STATE_CONNECTED});
