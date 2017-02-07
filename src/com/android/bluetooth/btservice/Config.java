@@ -41,6 +41,8 @@ import com.android.bluetooth.gatt.GattService;
 import com.android.bluetooth.map.BluetoothMapService;
 import com.android.bluetooth.sap.SapService;
 import com.android.bluetooth.pbapclient.PbapClientService;
+import com.android.bluetooth.pbap.BluetoothPbapService;
+import com.android.bluetooth.opp.BluetoothOppService;
 
 public class Config {
     private static final String TAG = "AdapterServiceConfig";
@@ -62,7 +64,9 @@ public class Config {
         HeadsetClientService.class,
         AvrcpControllerService.class,
         SapService.class,
-        PbapClientService.class
+        PbapClientService.class,
+        BluetoothOppService.class,
+        BluetoothPbapService.class
     };
     /**
      * Resource flag to indicate whether profile is supported or not.
@@ -79,7 +83,9 @@ public class Config {
         R.bool.profile_supported_hfpclient,
         R.bool.profile_supported_avrcp_controller,
         R.bool.profile_supported_sap,
-        R.bool.profile_supported_pbapclient
+        R.bool.profile_supported_pbapclient,
+        R.bool.profile_supported_opp,
+        R.bool.profile_supported_pbap
     };
 
     private static Class[] SUPPORTED_PROFILES = new Class[0];

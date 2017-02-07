@@ -45,8 +45,10 @@ import android.bluetooth.BluetoothSocket;
 import android.bluetooth.IBluetooth;
 import android.bluetooth.IBluetoothPbap;
 import android.bluetooth.BluetoothUuid;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
@@ -60,15 +62,17 @@ import android.util.Log;
 import com.android.bluetooth.BluetoothObexTransport;
 import com.android.bluetooth.Utils;
 
-
 import com.android.bluetooth.R;
 import com.android.bluetooth.btservice.AdapterService;
+import com.android.bluetooth.btservice.ProfileService;
+import com.android.bluetooth.btservice.ProfileService.IProfileServiceBinder;
+
 
 import java.io.IOException;
 
 import javax.obex.ServerSession;
 
-public class BluetoothPbapService extends Service {
+public class BluetoothPbapService extends ProfileService {
     private static final String TAG = "BluetoothPbapService";
 
     /**
@@ -182,6 +186,7 @@ public class BluetoothPbapService extends Service {
     //private IBluetooth mBluetoothService;
 
     private boolean mIsWaitingAuthorization = false;
+    private boolean mIsRegistered = false;
 
     // package and class name to which we send intent to check phone book access permission
     private static final String ACCESS_AUTHORITY_PACKAGE = "com.android.settings";
@@ -190,47 +195,6 @@ public class BluetoothPbapService extends Service {
 
     public BluetoothPbapService() {
         mState = BluetoothPbap.STATE_DISCONNECTED;
-    }
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        if (VERBOSE) Log.v(TAG, "Pbap Service onCreate");
-
-        mInterrupted = false;
-        mAdapter = BluetoothAdapter.getDefaultAdapter();
-
-        if (!mHasStarted) {
-            mHasStarted = true;
-            if (VERBOSE) Log.v(TAG, "Starting PBAP service");
-            BluetoothPbapConfig.init(this);
-            int state = mAdapter.getState();
-            if (state == BluetoothAdapter.STATE_ON) {
-                mSessionStatusHandler.sendMessage(mSessionStatusHandler
-                        .obtainMessage(START_LISTENER));
-            }
-        }
-    }
-
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        //int retCode = super.onStartCommand(intent, flags, startId);
-        //if (retCode == START_STICKY) {
-            mStartId = startId;
-            if (mAdapter == null) {
-                Log.w(TAG, "Stopping BluetoothPbapService: "
-                        + "device does not have BT or device is not ready");
-                // Release all resources
-                closeService();
-            } else {
-                // No need to handle the null intent case, because we have
-                // all restart work done in onCreate()
-                if (intent != null) {
-                    parseIntent(intent);
-                }
-            }
-        //}
-        return START_NOT_STICKY;
     }
 
     // process the intent from receiver
@@ -335,23 +299,12 @@ public class BluetoothPbapService extends Service {
         }
     }
 
-    @Override
-    public void onDestroy() {
-        if (VERBOSE) Log.v(TAG, "Pbap Service onDestroy");
-
-        super.onDestroy();
-        setState(BluetoothPbap.STATE_DISCONNECTED, BluetoothPbap.RESULT_CANCELED);
-        closeService();
-        if(mSessionStatusHandler != null) {
-            mSessionStatusHandler.removeCallbacksAndMessages(null);
+    private BroadcastReceiver mPbapReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            parseIntent(intent);
         }
-    }
-
-    @Override
-    public IBinder onBind(Intent intent) {
-        if (VERBOSE) Log.v(TAG, "Pbap Service onBind");
-        return mBinder;
-    }
+    };
 
     private void startRfcommSocketListener() {
         if (VERBOSE) Log.v(TAG, "Pbap Service startRfcommSocketListener");
@@ -638,8 +591,7 @@ public class BluetoothPbapService extends Service {
                                         BluetoothDevice.REQUEST_TYPE_PHONEBOOK_ACCESS);
                         intent.putExtra(BluetoothDevice.EXTRA_DEVICE, mRemoteDevice);
                         intent.putExtra(BluetoothDevice.EXTRA_PACKAGE_NAME, getPackageName());
-                        intent.putExtra(BluetoothDevice.EXTRA_CLASS_NAME,
-                                        BluetoothPbapReceiver.class.getName());
+                        intent.putExtra(BluetoothDevice.EXTRA_CLASS_NAME, getName());
 
                         mIsWaitingAuthorization = true;
                         sendOrderedBroadcast(intent, BLUETOOTH_ADMIN_PERM);
@@ -766,6 +718,14 @@ public class BluetoothPbapService extends Service {
         }
     }
 
+    protected int getState() {
+        return mState;
+    }
+
+    protected BluetoothDevice getRemoteDevice() {
+        return mRemoteDevice;
+    }
+
     private void createPbapNotification(String action) {
 
         NotificationManager nm = (NotificationManager)
@@ -780,27 +740,28 @@ public class BluetoothPbapService extends Service {
         // Create an intent triggered by clicking on the
         // "Clear All Notifications" button
         Intent deleteIntent = new Intent();
-        deleteIntent.setClass(this, BluetoothPbapReceiver.class);
+        deleteIntent.setClass(this, BluetoothPbapService.class);
+        deleteIntent.setAction(AUTH_CANCELLED_ACTION);
 
         String name = getRemoteDeviceName();
 
         if (action.equals(AUTH_CHALL_ACTION)) {
-            Notification notification = new Notification.Builder(this)
-                    .setWhen(System.currentTimeMillis())
-                    .setContentTitle(getString(R.string.auth_notif_title))
-                    .setContentText(getString(R.string.auth_notif_message, name))
-                    .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                    .setTicker(getString(R.string.auth_notif_ticker))
-                    .setColor(getResources().getColor(
-                            com.android.internal.R.color.system_notification_accent_color,
-                            this.getTheme()))
-                    .setFlag(Notification.FLAG_AUTO_CANCEL, true)
-                    .setFlag(Notification.FLAG_ONLY_ALERT_ONCE, true)
-                    .setDefaults(Notification.DEFAULT_SOUND)
-                    .setContentIntent(PendingIntent.getActivity(this, 0, clickIntent, 0))
-                    .setDeleteIntent(PendingIntent.getBroadcast(this, 0,
-                            deleteIntent.setAction(AUTH_CANCELLED_ACTION), 0))
-                    .build();
+            Notification notification =
+                    new Notification.Builder(this)
+                            .setWhen(System.currentTimeMillis())
+                            .setContentTitle(getString(R.string.auth_notif_title))
+                            .setContentText(getString(R.string.auth_notif_message, name))
+                            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+                            .setTicker(getString(R.string.auth_notif_ticker))
+                            .setColor(getResources().getColor(
+                                    com.android.internal.R.color.system_notification_accent_color,
+                                    this.getTheme()))
+                            .setFlag(Notification.FLAG_AUTO_CANCEL, true)
+                            .setFlag(Notification.FLAG_ONLY_ALERT_ONCE, true)
+                            .setDefaults(Notification.DEFAULT_SOUND)
+                            .setContentIntent(PendingIntent.getActivity(this, 0, clickIntent, 0))
+                            .setDeleteIntent(PendingIntent.getBroadcast(this, 0, deleteIntent, 0))
+                            .build();
             nm.notify(NOTIFICATION_ID_AUTH, notification);
         }
     }
@@ -823,84 +784,130 @@ public class BluetoothPbapService extends Service {
         return sRemoteDeviceName;
     }
 
-    /**
-     * Handlers for incoming service calls
-     */
-    private final IBluetoothPbap.Stub mBinder = new IBluetoothPbap.Stub() {
-        public int getState() {
-            if (DEBUG) Log.d(TAG, "getState " + mState);
+    @Override
+    protected IProfileServiceBinder initBinder() {
+        return new PbapBinder(this);
+    }
 
-            if (!Utils.checkCaller()) {
-                Log.w(TAG,"getState(): not allowed for non-active user");
-                return BluetoothPbap.STATE_DISCONNECTED;
+    @Override
+    protected boolean start() {
+        Log.v(TAG, "start()");
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(BluetoothDevice.ACTION_CONNECTION_ACCESS_REPLY);
+        filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+        filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+        filter.addAction(AUTH_RESPONSE_ACTION);
+        filter.addAction(AUTH_CANCELLED_ACTION);
+
+        try {
+            registerReceiver(mPbapReceiver, filter);
+            mIsRegistered = true;
+        } catch (Exception e) {
+            Log.w(TAG, "Unable to register pbap receiver", e);
+        }
+        mInterrupted = false;
+        BluetoothPbapConfig.init(this);
+        mAdapter = BluetoothAdapter.getDefaultAdapter();
+        // start RFCOMM listener
+        mSessionStatusHandler.sendMessage(mSessionStatusHandler.obtainMessage(START_LISTENER));
+        return true;
+    }
+
+    @Override
+    protected boolean stop() {
+        Log.v(TAG, "stop()");
+        if (!mIsRegistered) {
+            Log.i(TAG, "Avoid unregister when receiver it is not registered");
+            return true;
+        }
+        try {
+            mIsRegistered = false;
+            unregisterReceiver(mPbapReceiver);
+        } catch (Exception e) {
+            Log.w(TAG, "Unable to unregister pbap receiver", e);
+        }
+        setState(BluetoothPbap.STATE_DISCONNECTED, BluetoothPbap.RESULT_CANCELED);
+        closeService();
+        if (mSessionStatusHandler != null) {
+            mSessionStatusHandler.removeCallbacksAndMessages(null);
+        }
+        return true;
+    }
+
+    protected void disconnect() {
+        synchronized (this) {
+            if (mState == BluetoothPbap.STATE_CONNECTED) {
+                if (mServerSession != null) {
+                    mServerSession.close();
+                    mServerSession = null;
+                }
+
+                closeConnectionSocket();
+
+                setState(BluetoothPbap.STATE_DISCONNECTED, BluetoothPbap.RESULT_CANCELED);
             }
+        }
+    }
 
-            enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
-            return mState;
+    // Has to be a static class or a memory leak can occur.
+    private static class PbapBinder extends IBluetoothPbap.Stub implements IProfileServiceBinder {
+        private BluetoothPbapService mService;
+
+        private BluetoothPbapService getService(String perm) {
+            if (!Utils.checkCaller()) {
+                Log.w(TAG, "not allowed for non-active user");
+                return null;
+            }
+            if (mService != null && mService.isAvailable()) {
+                mService.enforceCallingOrSelfPermission(perm, "Need " + perm + " permission");
+                return mService;
+            }
+            return null;
+        }
+
+        PbapBinder(BluetoothPbapService service) {
+            Log.v(TAG, "PbapBinder()");
+            mService = service;
+        }
+
+        public boolean cleanup() {
+            mService = null;
+            return true;
+        }
+
+        public int getState() {
+            if (DEBUG) Log.d(TAG, "getState = " + mService.getState());
+            BluetoothPbapService service = getService(BLUETOOTH_PERM);
+            if (service == null) return BluetoothPbap.STATE_DISCONNECTED;
+
+            return service.getState();
         }
 
         public BluetoothDevice getClient() {
-            if (DEBUG) Log.d(TAG, "getClient" + mRemoteDevice);
-
-            if (!Utils.checkCaller()) {
-                Log.w(TAG,"getClient(): not allowed for non-active user");
-                return null;
-            }
-
-            enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
-            if (mState == BluetoothPbap.STATE_DISCONNECTED) {
-                return null;
-            }
-            return mRemoteDevice;
+            if (DEBUG) Log.d(TAG, "getClient = " + mService.getRemoteDevice());
+            BluetoothPbapService service = getService(BLUETOOTH_PERM);
+            if (service == null) return null;
+            return service.getRemoteDevice();
         }
 
         public boolean isConnected(BluetoothDevice device) {
-            if (!Utils.checkCaller()) {
-                Log.w(TAG,"isConnected(): not allowed for non-active user");
-                return false;
-            }
-
-            enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
-            return mState == BluetoothPbap.STATE_CONNECTED && mRemoteDevice.equals(device);
+            if (DEBUG) Log.d(TAG, "isConnected " + device);
+            BluetoothPbapService service = getService(BLUETOOTH_PERM);
+            if (service == null) return false;
+            return service.getState() == BluetoothPbap.STATE_CONNECTED
+                    && service.getRemoteDevice().equals(device);
         }
 
         public boolean connect(BluetoothDevice device) {
-            if (!Utils.checkCaller()) {
-                Log.w(TAG,"connect(): not allowed for non-active user");
-                return false;
-            }
-
-            enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM,
-                    "Need BLUETOOTH_ADMIN permission");
+            BluetoothPbapService service = getService(BLUETOOTH_ADMIN_PERM);
             return false;
         }
 
         public void disconnect() {
             if (DEBUG) Log.d(TAG, "disconnect");
-
-            if (!Utils.checkCaller()) {
-                Log.w(TAG,"disconnect(): not allowed for non-active user");
-                return;
-            }
-
-            enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM,
-                    "Need BLUETOOTH_ADMIN permission");
-            synchronized (BluetoothPbapService.this) {
-                switch (mState) {
-                    case BluetoothPbap.STATE_CONNECTED:
-                        if (mServerSession != null) {
-                            mServerSession.close();
-                            mServerSession = null;
-                        }
-
-                        closeConnectionSocket();
-
-                        setState(BluetoothPbap.STATE_DISCONNECTED, BluetoothPbap.RESULT_CANCELED);
-                        break;
-                    default:
-                        break;
-                }
-            }
+            BluetoothPbapService service = getService(BLUETOOTH_ADMIN_PERM);
+            if (service == null) return;
+            service.disconnect();
         }
-    };
+    }
 }

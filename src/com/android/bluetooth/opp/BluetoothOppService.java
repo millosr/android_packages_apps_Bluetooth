@@ -37,6 +37,7 @@ import javax.obex.ObexTransport;
 
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevicePicker;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.ContentValues;
@@ -56,7 +57,9 @@ import android.os.PowerManager;
 import android.util.Log;
 import android.os.Process;
 
-import java.io.FileNotFoundException;
+import com.android.bluetooth.btservice.ProfileService;
+import com.android.bluetooth.btservice.ProfileService.IProfileServiceBinder;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -66,7 +69,7 @@ import java.util.ArrayList;
  * accept incoming OPP connection.
  */
 
-public class BluetoothOppService extends Service {
+public class BluetoothOppService extends ProfileService {
     private static final boolean D = Constants.DEBUG;
     private static final boolean V = Constants.VERBOSE;
 
@@ -117,8 +120,6 @@ public class BluetoothOppService extends Service {
      */
     private CharArrayBuffer mNewChars;
 
-    private BluetoothAdapter mAdapter;
-
     private PowerManager mPowerManager;
 
     private BluetoothOppRfcommListener mSocketListener;
@@ -139,15 +140,13 @@ public class BluetoothOppService extends Service {
     private BluetoothOppObexServerSession mServerSession;
 
     @Override
-    public IBinder onBind(Intent arg0) {
-        throw new UnsupportedOperationException("Cannot bind to Bluetooth OPP Service");
+    protected IProfileServiceBinder initBinder() {
+        return null;
     }
 
     @Override
-    public void onCreate() {
-        super.onCreate();
+    protected void create() {
         if (V) Log.v(TAG, "onCreate");
-        mAdapter = BluetoothAdapter.getDefaultAdapter();
         mSocketListener = new BluetoothOppRfcommListener(mAdapter);
         mShares = Lists.newArrayList();
         mBatchs = Lists.newArrayList();
@@ -180,18 +179,17 @@ public class BluetoothOppService extends Service {
     }
 
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        if (V) Log.v(TAG, "onStartCommand");
-        //int retCode = super.onStartCommand(intent, flags, startId);
-        //if (retCode == START_STICKY) {
-            if (mAdapter == null) {
-                Log.w(TAG, "Local BT device is not enabled");
-            } else {
-                startListener();
-            }
-            updateFromProvider();
-        //}
-        return START_NOT_STICKY;
+    public boolean start() {
+        if (V) Log.v(TAG, "start()");
+        startListener();
+        updateFromProvider();
+        return true;
+    }
+
+    @Override
+    public boolean stop() {
+        mHandler.sendMessage(mHandler.obtainMessage(STOP_LISTENER));
+        return true;
     }
 
     private void startListener() {
@@ -332,29 +330,28 @@ public class BluetoothOppService extends Service {
     };
 
     private void startSocketListener() {
-
         if (V) Log.v(TAG, "start RfcommListener");
         mSocketListener.start(mHandler);
         if (V) Log.v(TAG, "RfcommListener started");
     }
 
     @Override
-    public void onDestroy() {
+    public boolean cleanup() {
         if (V) Log.v(TAG, "onDestroy");
-        super.onDestroy();
         getContentResolver().unregisterContentObserver(mObserver);
         unregisterReceiver(mBluetoothReceiver);
         mSocketListener.stop();
 
-        if(mBatchs != null) {
+        if (mBatchs != null) {
             mBatchs.clear();
         }
-        if(mShares != null) {
+        if (mShares != null) {
             mShares.clear();
         }
-        if(mHandler != null) {
+        if (mHandler != null) {
             mHandler.removeCallbacksAndMessages(null);
         }
+        return true;
     }
 
     /* suppose we auto accept an incoming OPUSH connection */
@@ -373,24 +370,33 @@ public class BluetoothOppService extends Service {
             if (action.equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
                 switch (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
                     case BluetoothAdapter.STATE_ON:
-                        if (V) Log.v(TAG,
-                                    "Receiver BLUETOOTH_STATE_CHANGED_ACTION, BLUETOOTH_STATE_ON");
+                        if (V) Log.v(TAG, "Bluetooth state changed: STATE_ON");
                         startSocketListener();
-                        break;
-                    case BluetoothAdapter.STATE_TURNING_OFF:
-                        if (V) Log.v(TAG, "Receiver DISABLED_ACTION ");
-                        //FIX: Don't block main thread
-                        /*
-                        mSocketListener.stop();
-                        mListenStarted = false;
-                        synchronized (BluetoothOppService.this) {
-                            if (mUpdateThread == null) {
-                                stopSelf();
+                        // If this is within a sending process, continue the handle
+                        // logic to display device picker dialog.
+                        synchronized (this) {
+                            if (BluetoothOppManager.getInstance(context).mSendingFlag) {
+                                // reset the flags
+                                BluetoothOppManager.getInstance(context).mSendingFlag = false;
+
+                                Intent in1 = new Intent(BluetoothDevicePicker.ACTION_LAUNCH);
+                                in1.putExtra(BluetoothDevicePicker.EXTRA_NEED_AUTH, false);
+                                in1.putExtra(BluetoothDevicePicker.EXTRA_FILTER_TYPE,
+                                        BluetoothDevicePicker.FILTER_TYPE_TRANSFER);
+                                in1.putExtra(BluetoothDevicePicker.EXTRA_LAUNCH_PACKAGE,
+                                        Constants.THIS_PACKAGE_NAME);
+                                in1.putExtra(BluetoothDevicePicker.EXTRA_LAUNCH_CLASS,
+                                        BluetoothOppReceiver.class.getName());
+
+                                in1.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                context.startActivity(in1);
                             }
                         }
-                        */
-                        mHandler.sendMessage(mHandler.obtainMessage(STOP_LISTENER));
 
+                        break;
+                    case BluetoothAdapter.STATE_TURNING_OFF:
+                        if (V) Log.v(TAG, "Bluetooth state changed: STATE_TURNING_OFF");
+                        mHandler.sendMessage(mHandler.obtainMessage(STOP_LISTENER));
                         break;
                 }
             }
