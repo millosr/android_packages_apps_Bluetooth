@@ -429,7 +429,8 @@ final class RemoteDevices {
             debugLog("aclStateChangeCallback: State:DisConnected to Device:" + device);
         }
         intent.putExtra(BluetoothDevice.EXTRA_DEVICE, device);
-        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
+                | Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
         mAdapterService.sendBroadcast(intent, mAdapterService.BLUETOOTH_PERM);
     }
 
