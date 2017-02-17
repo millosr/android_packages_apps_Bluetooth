@@ -170,8 +170,6 @@ public class BluetoothOppService extends ProfileService {
         synchronized (BluetoothOppService.this) {
             if (mAdapter == null) {
                 Log.w(TAG, "Local BT device is not enabled");
-            } else {
-                startListener();
             }
         }
         if (V) BluetoothOppPreference.getInstance(this).dump();
@@ -181,7 +179,6 @@ public class BluetoothOppService extends ProfileService {
     @Override
     public boolean start() {
         if (V) Log.v(TAG, "start()");
-        startListener();
         updateFromProvider();
         return true;
     }
@@ -232,8 +229,14 @@ public class BluetoothOppService extends ProfileService {
                        mTransfer =null;
                     }
                     synchronized (BluetoothOppService.this) {
-                        if (mUpdateThread == null) {
-                            stopSelf();
+                        if (mUpdateThread != null) {
+                            try {
+                                mUpdateThread.interrupt();
+                                mUpdateThread.join();
+                            } catch (InterruptedException e) {
+                                Log.e(TAG, "Interrupted", e);
+                            }
+                            mUpdateThread = null;
                         }
                     }
                     break;
@@ -371,7 +374,7 @@ public class BluetoothOppService extends ProfileService {
                 switch (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
                     case BluetoothAdapter.STATE_ON:
                         if (V) Log.v(TAG, "Bluetooth state changed: STATE_ON");
-                        startSocketListener();
+                        startListener();
                         // If this is within a sending process, continue the handle
                         // logic to display device picker dialog.
                         synchronized (this) {
@@ -414,29 +417,36 @@ public class BluetoothOppService extends ProfileService {
     }
 
     private class UpdateThread extends Thread {
+        private boolean isInterrupted ;
         public UpdateThread() {
             super("Bluetooth Share Service");
+            isInterrupted = false;
         }
+
+        @Override
+        public void interrupt() {
+            isInterrupted = true;
+            if (D) Log.d(TAG, "Interrupted :" + isInterrupted);
+            super.interrupt();
+        }
+
 
         @Override
         public void run() {
             Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
 
             boolean keepService = false;
-            for (;;) {
+            while (!isInterrupted) {
                 synchronized (BluetoothOppService.this) {
                     if (mUpdateThread != this) {
                         throw new IllegalStateException(
                                 "multiple UpdateThreads in BluetoothOppService");
                     }
                     if (V) Log.v(TAG, "pendingUpdate is " + mPendingUpdate + " keepUpdateThread is "
-                                + keepService + " sListenStarted is " + mListenStarted);
+                                + keepService + " sListenStarted is " + mListenStarted +
+                                " isInterrupted :" + isInterrupted );
                     if (!mPendingUpdate) {
                         mUpdateThread = null;
-                        if (!keepService && !mListenStarted) {
-                            stopSelf();
-                            break;
-                        }
                         return;
                     }
                     mPendingUpdate = false;
@@ -471,7 +481,7 @@ public class BluetoothOppService extends ProfileService {
                  * contains an entry that's not in the array, insert a new entry
                  * in the array, move to next cursor row and next array entry.
                  */
-                while (!isAfterLast || arrayPos < mShares.size()) {
+                while (!isAfterLast || arrayPos < mShares.size() && mListenStarted) {
                     if (isAfterLast) {
                         // We're beyond the end of the cursor but there's still
                         // some
