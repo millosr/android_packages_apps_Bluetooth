@@ -485,6 +485,9 @@ public class HeadsetService extends ProfileService {
         if (!mStateMachine.isConnected()) {
             return false;
         }
+        if (!mStateMachine.isSlcConnected()) {
+            return false;
+        }
         if (mStateMachine.isAudioOn()) {
             return false;
         }
