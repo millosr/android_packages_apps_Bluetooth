@@ -166,6 +166,9 @@ final class HeadsetStateMachine extends StateMachine {
     // Indicates whether audio can be routed to the device.
     private boolean mAudioRouteAllowed = true;
 
+    // Indicates whether SCO audio needs to be forced to open regardless ANY OTHER restrictions
+    private boolean mForceScoAudio = false;
+
     // Indicate whether service level connection has been established for this device
     private boolean mSlcConnected = false;
 
@@ -2214,6 +2217,10 @@ final class HeadsetStateMachine extends StateMachine {
         return mAudioRouteAllowed;
     }
 
+    public void setForceScoAudio(boolean forced) {
+        mForceScoAudio = forced;
+    }
+
     int getAudioState(BluetoothDevice device) {
         synchronized(this) {
             if (mConnectedDevicesList.size() == 0) {
@@ -3432,6 +3439,7 @@ final class HeadsetStateMachine extends StateMachine {
     // Accept incoming SCO only when there is active call, VR activated,
     // active VOIP call
     private boolean isScoAcceptable() {
+        if (mForceScoAudio) return true;
         return mAudioRouteAllowed && (mVoiceRecognitionStarted || isInCall());
     }
 
