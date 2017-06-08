@@ -112,7 +112,7 @@ final class RemoteDevices {
     class DeviceProperties {
         private String mName;
         private byte[] mAddress;
-        private int mBluetoothClass;
+        private int mBluetoothClass = BluetoothClass.Device.Major.UNCATEGORIZED;
         private short mRssi;
         private ParcelUuid[] mUuids;
         private int mDeviceType;
