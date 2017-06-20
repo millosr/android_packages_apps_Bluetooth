@@ -1380,6 +1380,17 @@ public class AdapterService extends Service {
             return service.configHciSnoopLog(enable);
         }
 
+        public int getBatteryLevel(BluetoothDevice device) {
+            if (!Utils.checkCaller()) {
+                Log.w(TAG, "getBatteryLevel(): not allowed for non-active user");
+                return BluetoothDevice.BATTERY_LEVEL_UNKNOWN;
+            }
+
+            AdapterService service = getService();
+            if (service == null) return BluetoothDevice.BATTERY_LEVEL_UNKNOWN;
+            return service.getBatteryLevel(device);
+        }
+
         public boolean factoryReset() {
             AdapterService service = getService();
             if (service == null) return false;
@@ -2002,10 +2013,15 @@ public class AdapterService extends Service {
         return true;
     }
 
+    int getBatteryLevel(BluetoothDevice device) {
+        enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
+        DeviceProperties deviceProp = mRemoteDevices.getDeviceProperties(device);
+        if (deviceProp == null) return BluetoothDevice.BATTERY_LEVEL_UNKNOWN;
+        return deviceProp.getBatteryLevel();
+    }
 
-     boolean setPin(BluetoothDevice device, boolean accept, int len, byte[] pinCode) {
-        enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM,
-                                       "Need BLUETOOTH ADMIN permission");
+    boolean setPin(BluetoothDevice device, boolean accept, int len, byte[] pinCode) {
+        enforceCallingOrSelfPermission(BLUETOOTH_ADMIN_PERM, "Need BLUETOOTH ADMIN permission");
         DeviceProperties deviceProp = mRemoteDevices.getDeviceProperties(device);
         // Only allow setting a pin in bonding state, or bonded state in case of security upgrade.
         if (deviceProp == null ||
