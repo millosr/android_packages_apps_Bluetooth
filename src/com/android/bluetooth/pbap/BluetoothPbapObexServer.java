@@ -517,16 +517,16 @@ public class BluetoothPbapObexServer extends ServerRequestHandler {
         boolean parseOk = true;
         while ((i < appParam.length) && (parseOk == true)) {
             switch (appParam[i]) {
-                case ApplicationParameter.TRIPLET_TAGID.FILTER_TAGID:
+                case ApplicationParameter.TRIPLET_TAGID.PROPERTY_SELECTOR_TAGID:
                     i += 2; // length and tag field in triplet
-                    for (int index=0; index < ApplicationParameter.TRIPLET_LENGTH.FILTER_LENGTH;
+                    for (int index=0; index < ApplicationParameter.TRIPLET_LENGTH.SUPPORTEDFEATURE_LENGTH;
                          index++) {
                         if (appParam[i+index] != 0){
                             appParamValue.ignorefilter = false;
                             appParamValue.filter[index] = appParam[i+index];
                         }
                     }
-                    i += ApplicationParameter.TRIPLET_LENGTH.FILTER_LENGTH;
+                    i += ApplicationParameter.TRIPLET_LENGTH.SUPPORTEDFEATURE_LENGTH;
                     break;
                 case ApplicationParameter.TRIPLET_TAGID.ORDER_TAGID:
                     i += 2; // length and tag field in triplet
