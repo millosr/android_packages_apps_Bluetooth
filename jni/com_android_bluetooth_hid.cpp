@@ -263,8 +263,6 @@ static void cleanupNative(JNIEnv *env, jobject object) {
         env->DeleteGlobalRef(mCallbacksObj);
         mCallbacksObj = NULL;
     }
-
-    env->DeleteGlobalRef(mCallbacksObj);
 }
 
 static jboolean connectHidNative(JNIEnv *env, jobject object, jbyteArray address) {
