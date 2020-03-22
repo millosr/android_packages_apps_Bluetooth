@@ -641,6 +641,9 @@ public class GattService extends ProfileService {
                             mScanManager.stopScan(client);
                         }
                     }
+                } else {
+                    Log.w(TAG, "Stop scan for clientIf " + client.clientIf);
+                    mScanManager.stopScan(client);
                 }
             } else {
                 ServerMap.App app = mServerMap.getById(client.clientIf);
@@ -652,6 +655,9 @@ public class GattService extends ProfileService {
                         mServerMap.remove(client.clientIf);
                         mScanManager.stopScan(client);
                     }
+                } else {
+                    Log.w(TAG, "Stop scan for clientIf " + client.clientIf);
+                    mScanManager.stopScan(client);
                 }
             }
         }
